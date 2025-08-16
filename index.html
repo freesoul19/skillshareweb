@@ -13,10 +13,9 @@
             background-color: #f0f4f8; /* Light blue-gray background */
             color: #333;
         }
-        /* Common page container styling (active class is now less critical for display) */
+        /* Common page container styling */
         .page-container {
-            /* Removed display: none; and display: block; from here.
-               Visibility is now controlled directly by JavaScript's style.display */
+            display: none; /* Hidden by default */
         }
         .loading-overlay {
             position: fixed;
@@ -359,7 +358,8 @@
                     <h3 class="text-2xl font-semibold text-indigo-700 mb-3">My Wallet 💳</h3>
                     <p class="text-gray-600">Check your Skill Credits and transaction history.</p>
                 </div>
-                <div class="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
+                <!-- My Sessions Card -->
+                <div id="my-sessions-card" class="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
                     <h3 class="text-2xl font-semibold text-indigo-700 mb-3">My Sessions 🗓️</h3>
                     <p class="text-gray-600">View your upcoming and past learning/teaching sessions.</p>
                 </div>
@@ -458,6 +458,22 @@
             </div>
         </div>
 
+        <!-- ===== MY SESSIONS PAGE ===== -->
+        <div id="my-sessions-page" class="page-container py-8 px-4">
+            <h2 class="text-4xl font-bold text-indigo-800 mb-8 text-center">My Sessions 🗓️</h2>
+            <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-4xl mx-auto">
+                <h3 class="text-3xl font-bold text-indigo-700 mb-6 text-center">Sessions I'm Teaching 🧑‍🏫</h3>
+                <div id="teaching-sessions-list" class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+                    <p class="text-gray-600 text-lg" id="no-teaching-sessions-message">No sessions where you are the teacher yet.</p>
+                </div>
+
+                <h3 class="text-3xl font-bold text-indigo-700 mb-6 text-center">Sessions I'm Learning 📚</h3>
+                <div id="learning-sessions-list" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <p class="text-gray-600 text-lg" id="no-learning-sessions-message">No sessions where you are the learner yet.</p>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- Footer -->
@@ -472,7 +488,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot, query, getDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot, query, getDoc, updateDoc, deleteDoc, where, or } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Hardcoded Firebase Config (as provided by the user)
         const firebaseConfig = {
@@ -526,9 +542,10 @@
         const authPage = document.getElementById('auth-page');
         const dashboardPage = document.getElementById('dashboard-page');
         const teachSkillPage = document.getElementById('teach-skill-page');
-        const myProfilePage = document.getElementById('my-profile-page'); // New page
-        const mySkillsPage = document.getElementById('my-skills-page');   // New page
-        const myWalletPage = document.getElementById('my-wallet-page');   // New page
+        const myProfilePage = document.getElementById('my-profile-page');
+        const mySkillsPage = document.getElementById('my-skills-page');
+        const myWalletPage = document.getElementById('my-wallet-page');
+        const mySessionsPage = document.getElementById('my-sessions-page'); // New page
 
         const navHomeButton = document.getElementById('nav-home');
         const navAuthButton = document.getElementById('nav-auth-button');
@@ -547,11 +564,12 @@
         const currentUserIdSpan = document.getElementById('current-user-id');
         const loadingOverlay = document.getElementById('loading-overlay');
 
-        const myProfileCard = document.getElementById('my-profile-card'); // Dashboard card
+        const myProfileCard = document.getElementById('my-profile-card');
         const findSessionCard = document.getElementById('find-session-card');
         const teachSkillCard = document.getElementById('teach-skill-card');
-        const mySkillsCard = document.getElementById('my-skills-card');     // Dashboard card
-        const myWalletCard = document.getElementById('my-wallet-card');     // Dashboard card
+        const mySkillsCard = document.getElementById('my-skills-card');
+        const myWalletCard = document.getElementById('my-wallet-card');
+        const mySessionsCard = document.getElementById('my-sessions-card'); // Dashboard card
 
         const skillNameInput = document.getElementById('skill-name-input');
         const generateDescriptionBtn = document.getElementById('generate-description-btn');
@@ -570,6 +588,11 @@
 
         const walletCreditsEl = document.getElementById('wallet-credits');
         const transactionHistoryEl = document.getElementById('transaction-history');
+
+        const teachingSessionsList = document.getElementById('teaching-sessions-list'); // New
+        const noTeachingSessionsMessage = document.getElementById('no-teaching-sessions-message'); // New
+        const learningSessionsList = document.getElementById('learning-sessions-list'); // New
+        const noLearningSessionsMessage = document.getElementById('no-learning-sessions-message'); // New
 
 
         // --- Custom Message Box Functionality (replaces alert()) ---
@@ -657,23 +680,31 @@
         async function initializeAuth() {
             showLoading();
             try {
+                // Try signing in with custom token if available
                 if (initialAuthToken) {
                     try {
                         await retryOperation(() => signInWithCustomToken(auth, initialAuthToken));
                         console.log("Signed in with custom token.");
                     } catch (customTokenError) {
                         console.warn("Custom token sign-in failed, falling back to anonymous:", customTokenError);
-                        // If custom token fails (e.g., mismatch, expiry), try anonymous sign-in
+                        // If custom token fails, proceed to try anonymous sign-in
                         await retryOperation(() => signInAnonymously(auth));
                         console.log("Signed in anonymously after custom token fallback.");
                     }
                 } else {
+                    // If no custom token, try anonymous sign-in directly
                     await retryOperation(() => signInAnonymously(auth));
                     console.log("Signed in anonymously.");
                 }
             } catch (error) {
+                // Catch any errors from anonymous sign-in or custom token if they are the root cause
                 console.error("Firebase Auth initialization error:", error);
-                displayMessage(`Authentication error: ${error.message}`);
+                // Specifically check for auth/admin-restricted-operation for anonymous sign-in
+                if (error.code === 'auth/admin-restricted-operation') {
+                    displayMessage('Anonymous authentication is not enabled for this Firebase project. Please enable it in your Firebase console under Authentication -> Sign-in method.');
+                } else {
+                    displayMessage(`Authentication error: ${error.message}`);
+                }
             } finally {
                 hideLoading();
             }
@@ -862,6 +893,11 @@
             populateWalletPage(); // Populate wallet data
         });
 
+        mySessionsCard.addEventListener('click', () => { // New event listener
+            showPage('my-sessions-page');
+            loadAndDisplayMySessions(); // Load sessions for the current user
+        });
+
         // --- My Profile Page Functions ---
         async function fetchUserProfile(userId) {
             if (!userId) return;
@@ -1028,19 +1064,44 @@
                             <h3 class="text-xl font-semibold text-indigo-700">${skill.name}</h3>
                             <p class="text-gray-600 text-sm flex-grow">${skill.description}</p>
                             <p class="text-sm text-gray-500 mt-2">Taught by: <span class="font-medium">${skill.teacherEmail}</span></p>
-                            <button class="mt-3 w-full bg-teal-500 text-white px-4 py-2 rounded-md hover:bg-teal-600 transition-colors" data-skill-id="${skillId}" data-skill-name="${skill.name}" data-teacher-email="${skill.teacherEmail}">Book Session</button>
+                            <button class="mt-3 w-full bg-teal-500 text-white px-4 py-2 rounded-md hover:bg-teal-600 transition-colors" data-skill-id="${skillId}" data-skill-name="${skill.name}" data-teacher-id="${skill.teacherId}" data-teacher-email="${skill.teacherEmail}">Book Session</button>
                         `;
                         skillsListContainer.appendChild(skillCard);
                     });
                     // Add event listeners for "Book Session" buttons
                     document.querySelectorAll('#skills-list button').forEach(button => {
-                        button.addEventListener('click', (event) => {
+                        button.addEventListener('click', async (event) => {
                             const skillId = event.target.dataset.skillId;
                             const skillName = event.target.dataset.skillName;
+                            const teacherId = event.target.dataset.teacherId;
                             const teacherEmail = event.target.dataset.teacherEmail;
-                            displayMessage(`You are interested in booking "${skillName}" from ${teacherEmail}. A notification has been sent to the teacher.`);
-                            // In a real app, this would trigger a more complex booking flow,
-                            // like sending an email, creating a chat, or a session request in Firestore.
+
+                            if (teacherId === currentUserId) {
+                                displayMessage('You cannot book a session with yourself!');
+                                return;
+                            }
+
+                            showLoading();
+                            try {
+                                // Corrected path: artifacts/${appId}/public/data/sessions
+                                const sessionsCollectionRef = collection(db, `artifacts/${appId}/public/data/sessions`);
+                                await retryOperation(() => addDoc(sessionsCollectionRef, {
+                                    skillId: skillId,
+                                    skillName: skillName,
+                                    teacherId: teacherId,
+                                    teacherEmail: teacherEmail,
+                                    learnerId: currentUserId,
+                                    learnerEmail: currentUserEmail,
+                                    status: 'pending', // Initial status
+                                    requestedAt: new Date()
+                                }));
+                                displayMessage(`Session request for "${skillName}" sent to ${teacherEmail}.`);
+                            } catch (error) {
+                                displayMessage(`Error booking session: ${error.message}`);
+                                console.error('Firestore booking session error:', error);
+                            } finally {
+                                hideLoading();
+                            }
                         });
                     });
                 }
@@ -1158,20 +1219,123 @@
                 hideLoading();
             });
         }
+
+        // --- Load and Display MY Sessions (Real-time with onSnapshot) ---
+        async function loadAndDisplayMySessions() {
+            if (!currentUserId) {
+                console.log("User not logged in, cannot load sessions.");
+                teachingSessionsList.innerHTML = '<p class="text-gray-600 italic">Please log in to view your sessions.</p>';
+                learningSessionsList.innerHTML = '<p class="text-gray-600 italic">Please log in to view your sessions.</p>';
+                noTeachingSessionsMessage.style.display = 'none'; // Hide default message if not logged in
+                noLearningSessionsMessage.style.display = 'none'; // Hide default message if not logged in
+                return;
+            }
+
+            showLoading();
+            // Corrected path: artifacts/${appId}/public/data/sessions
+            const sessionsRef = collection(db, `artifacts/${appId}/public/data/sessions`);
+
+            // Query for sessions where current user is the teacher OR the learner
+            const q = query(sessionsRef,
+                or(
+                    where("teacherId", "==", currentUserId),
+                    where("learnerId", "==", currentUserId)
+                )
+            );
+
+            onSnapshot(q, (snapshot) => {
+                teachingSessionsList.innerHTML = '';
+                learningSessionsList.innerHTML = '';
+                let hasTeachingSessions = false;
+                let hasLearningSessions = false;
+
+                snapshot.forEach((docSnap) => {
+                    const session = docSnap.data();
+                    const sessionId = docSnap.id;
+                    const sessionCard = document.createElement('div');
+                    sessionCard.className = 'bg-white p-6 rounded-lg shadow-md flex flex-col items-start text-left space-y-2 border';
+
+                    let cardContent = `
+                        <h3 class="text-xl font-semibold text-indigo-700">${session.skillName}</h3>
+                        <p class="text-gray-600 text-sm">Status: <span class="font-bold uppercase ${session.status === 'pending' ? 'text-yellow-600' : session.status === 'accepted' ? 'text-green-600' : 'text-red-600'}">${session.status}</span></p>
+                        <p class="text-sm text-gray-500">Requested: ${session.requestedAt.toDate().toLocaleDateString()} ${session.requestedAt.toDate().toLocaleTimeString()}</p>
+                    `;
+
+                    if (session.teacherId === currentUserId) {
+                        // Current user is the teacher
+                        hasTeachingSessions = true;
+                        sessionCard.classList.add('border-purple-300'); // Teacher session color
+                        cardContent += `
+                            <p class="text-sm text-gray-500">Learner: <span class="font-medium">${session.learnerEmail}</span></p>
+                            <div class="flex space-x-2 mt-3 w-full">
+                                ${session.status === 'pending' ? `
+                                    <button class="flex-1 bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 transition-colors" data-session-id="${sessionId}" data-action="accept">Accept</button>
+                                    <button class="flex-1 bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 transition-colors" data-session-id="${sessionId}" data-action="decline">Decline</button>
+                                ` : ''}
+                                <button class="flex-1 bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors" data-session-id="${sessionId}" data-action="details">Details</button>
+                            </div>
+                        `;
+                        teachingSessionsList.appendChild(sessionCard);
+                    } else {
+                        // Current user is the learner
+                        hasLearningSessions = true;
+                        sessionCard.classList.add('border-teal-300'); // Learner session color
+                        cardContent += `
+                            <p class="text-sm text-gray-500">Teacher: <span class="font-medium">${session.teacherEmail}</span></p>
+                            <div class="flex space-x-2 mt-3 w-full">
+                                <button class="flex-1 bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors" data-session-id="${sessionId}" data-action="details">Details</button>
+                            </div>
+                        `;
+                        learningSessionsList.appendChild(sessionCard);
+                    }
+                    sessionCard.innerHTML = cardContent;
+                });
+
+                if (!hasTeachingSessions) {
+                    noTeachingSessionsMessage.style.display = 'block';
+                } else {
+                    noTeachingSessionsMessage.style.display = 'none';
+                }
+                if (!hasLearningSessions) {
+                    noLearningSessionsMessage.style.display = 'block';
+                } else {
+                    noLearningSessionsMessage.style.display = 'none';
+                }
+
+                // Add event listeners for session action buttons (Accept/Decline/Details)
+                document.querySelectorAll('#teaching-sessions-list button, #learning-sessions-list button').forEach(button => {
+                    button.addEventListener('click', async (event) => {
+                        const sessionId = event.target.dataset.sessionId;
+                        const action = event.target.dataset.action;
+
+                        if (action === 'accept' || action === 'decline') {
+                            showLoading();
+                            try {
+                                // Corrected path: artifacts/${appId}/public/data/sessions
+                                const sessionDocRef = doc(db, `artifacts/${appId}/public/data/sessions`, sessionId);
+                                await retryOperation(() => updateDoc(sessionDocRef, {
+                                    status: action === 'accept' ? 'accepted' : 'declined'
+                                }));
+                                displayMessage(`Session ${action}ed successfully!`);
+                            } catch (error) {
+                                displayMessage(`Error ${action}ing session: ${error.message}`);
+                                console.error(`Firestore ${action} session error:`, error);
+                            } finally {
+                                hideLoading();
+                            }
+                        } else if (action === 'details') {
+                            displayMessage(`Details for session ID: ${sessionId} (functionality coming soon!)`);
+                        }
+                    });
+                });
+
+                hideLoading();
+            }, (error) => {
+                console.error("Error fetching sessions:", error);
+                displayMessage(`Failed to load sessions: ${error.message}`);
+                hideLoading();
+            });
+        }
     </script>
 </body>
 </html>
-```
----
-
-### The Fix Explained:
-
-1.  **Direct `style.display` Manipulation:**
-    * In the `<style>` block, I've removed the `display: none;` and `display: block;` rules from the `.page-container` and `.page-container.active` classes.
-    * Instead, the `showPage(pageId)` JavaScript function now directly sets `page.style.display = 'block';` for the active page and `page.style.display = 'none';` for all other pages. This is a more forceful way to control visibility and bypasses potential CSS specificity issues.
-2.  **Initial Page State:**
-    * The `active` class has been removed from the `home-page` div in the HTML. The initial display of the correct page (home or dashboard) is now entirely handled by the `initializeAuth()` and `onAuthStateChanged()` functions calling `showPage()`.
-3.  **Custom Confirmation for Delete:**
-    * I've also updated the "Delete" button logic on the "My Skills" page to use a **custom confirmation message box** instead of the browser's native `confirm()` alert. This provides a more consistent UI experience, as `window.confirm()` can be blocked or behave unexpectedly in certain environments.
-
-With these changes, when you successfully sign in, the `onAuthStateChanged` listener will call `showPage('dashboard-page')`, which will explicitly set the `auth-page` to `display: none;`, ensuring it vanishes as expect
